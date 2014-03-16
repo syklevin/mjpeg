@@ -4,6 +4,7 @@ import (
   "io"
   "log"
   "bufio"
+  "fmt"
 )
 
 type FormatError string
@@ -11,7 +12,7 @@ type FormatError string
 func (e FormatError) Error() string { return string(e) }
 
 const DEF_BUF_SZ = 4096
-const DEF_BLK_SZ = 64
+const DEF_BLK_SZ = 256
 
 var SOI = []byte { 0xff, 0xd8 }
 var EOI = []byte { 0xff, 0xd9 }
@@ -105,18 +106,26 @@ func (this *Parser) parseFrame() ([]byte, error){
   if bound > cap(this.buf) {
     // allocate double what's needed, for future growth.
     dubSize := (cap(this.buf))*2
-    newBuf := make([]byte, dubSize, dubSize)
+    newBuf := make([]byte, len(this.buf), dubSize)
     copy(newBuf, this.buf)
     this.buf = newBuf
   }
+
+  //fmt.Printf("buf len %d, cap %d\n", len(this.buf), cap(this.buf))
+
   chunk, err := io.ReadFull(this.r, this.buf[this.read:bound])
   if err != nil {
     log.Printf("goes here %s\n", err)
     return nil, err
   }
   this.read += chunk
-  imgStart := IndexOfBytes(this.buf, SOI, 0)
-  imgEnd := IndexOfBytes(this.buf, EOI, 0)
+  //grow the slice by read bytes
+  this.buf = this.buf[:this.read]
+
+  //fmt.Printf("buf len %d, cap %d\n", len(this.buf), cap(this.buf))
+
+  imgStart := IndexOfBytes(this.buf, SOI)
+  imgEnd := IndexOfBytes(this.buf, EOI)
   if imgStart < 0 {
     return nil, FormatError("SOI not located")
   }
@@ -124,35 +133,38 @@ func (this *Parser) parseFrame() ([]byte, error){
     return nil, FormatError("EOI not located")
   }
   imgEnd = imgEnd + 2 //add last two bytes of EOI
-  imgSize := imgEnd - imgStart
-  imgBuf := make([]byte, imgSize)
-  copy(imgBuf, this.buf[imgStart:imgEnd])
-  newBuf := make([]byte, cap(this.buf))
-  copy(newBuf, this.buf[imgEnd:])
-  this.buf = newBuf
-  this.read = 0
+  fmt.Printf("start %d, end %d\n", imgStart, imgEnd)
+
+  imgBuf := append([]byte{}, this.buf[imgStart:imgEnd]...)
+  
+  rest := len(this.buf) - imgEnd
+  copy(this.buf[0:], this.buf[imgEnd:])
+  this.buf = this.buf[:rest]
+  this.read = rest
   return imgBuf, nil
 }
 
 
-func IndexOfBytes(buf []byte, search []byte, start int) (int){
-  if start < 0 { start = 0 }
+func IndexOfBytes(buf []byte, search []byte) (int){
+  start := 0
   m := len(search)
   n := len(buf) - m
+  matched := 0
   for ; start < n; start++ {
-    if buf[start] == search[0] {
-      next := 1
-      for ; next < m ; next++ {
-        if buf[start+next] != search[next] {
-          break
-        }
+    matched = 0
+    for next := 0; next < m ; next++ {
+      if buf[start+next] == search[next] {
+        matched++
+      } else {
+        break
       }
-
-      if next == m {
-        return start
-      }
+    }
+    if matched == m {
+      return start
     }
   }
   return -1
 }
+
+
 

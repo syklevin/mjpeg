@@ -20,7 +20,7 @@ func TestParse(t *testing.T) {
   }
 
   handle := func(frame []byte){
-    t.Logf("%X\n", frame[:20])
+    t.Logf("%X\n", frame[len(frame)-20:])
     t.Logf("-----------------------------------\n")
   }
 
